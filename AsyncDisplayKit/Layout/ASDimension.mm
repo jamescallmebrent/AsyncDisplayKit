@@ -26,9 +26,9 @@ ASRelativeDimension ASRelativeDimensionMakeWithPoints(CGFloat points)
   return ASRelativeDimensionMake(ASRelativeDimensionTypePoints, points);
 }
 
-ASRelativeDimension ASRelativeDimensionMakeWithPercent(CGFloat percent)
+ASRelativeDimension ASRelativeDimensionMakeWithFraction(CGFloat fraction)
 {
-  return ASRelativeDimensionMake(ASRelativeDimensionTypePercent, percent);
+  return ASRelativeDimensionMake(ASRelativeDimensionTypeFraction, fraction);
 }
 
 ASRelativeDimension ASRelativeDimensionCopy(ASRelativeDimension aDimension)
@@ -46,7 +46,7 @@ NSString *NSStringFromASRelativeDimension(ASRelativeDimension dimension)
   switch (dimension.type) {
     case ASRelativeDimensionTypePoints:
       return [NSString stringWithFormat:@"%.0fpt", dimension.value];
-    case ASRelativeDimensionTypePercent:
+    case ASRelativeDimensionTypeFraction:
       return [NSString stringWithFormat:@"%.0f%%", dimension.value * 100.0];
   }
 }
@@ -56,7 +56,7 @@ CGFloat ASRelativeDimensionResolve(ASRelativeDimension dimension, CGFloat parent
   switch (dimension.type) {
     case ASRelativeDimensionTypePoints:
       return dimension.value;
-    case ASRelativeDimensionTypePercent:
+    case ASRelativeDimensionTypeFraction:
       return dimension.value * parent;
   }
 }
