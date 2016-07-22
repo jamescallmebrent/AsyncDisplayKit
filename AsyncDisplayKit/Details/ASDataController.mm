@@ -117,80 +117,51 @@ NSString * const ASDataControllerRowNodeKind = @"_ASDataControllerRowNodeKind";
 
 #pragma mark - Cell Layout
 
-- (void)batchLayoutNodesFromContexts:(NSArray<ASIndexedNodeContext *> *)contexts ofKind:(NSString *)kind completion:(ASDataControllerCompletionBlock)completionBlock
-{
-  ASSERT_ON_EDITING_QUEUE;
-  
-  NSUInteger blockSize = [[ASDataController class] parallelProcessorCount] * kASDataControllerSizingCountPerProcessor;
-  NSUInteger count = contexts.count;
-  
-  // Processing in batches
-  for (NSUInteger i = 0; i < count; i += blockSize) {
-    NSRange batchedRange = NSMakeRange(i, MIN(count - i, blockSize));
-    NSArray<ASIndexedNodeContext *> *batchedContexts = [contexts subarrayWithRange:batchedRange];
-    [self _layoutNodesFromContexts:batchedContexts ofKind:kind completion:completionBlock];
-  }
-}
-
-/**
- * Measure and layout the given node with the constrained size range.
- */
-- (void)_layoutNode:(ASCellNode *)node withConstrainedSize:(ASSizeRange)constrainedSize
-{
-  CGRect frame = CGRectZero;
-  frame.size = [node measureWithSizeRange:constrainedSize].size;
-  node.frame = frame;
-}
-
 /**
  * Measures and defines the layout for each node in optimized batches on an editing queue, inserting the results into the backing store.
  */
-- (void)_batchLayoutNodesFromContexts:(NSArray<ASIndexedNodeContext *> *)contexts withAnimationOptions:(ASDataControllerAnimationOptions)animationOptions
+- (void)_layoutNodesFromContexts:(NSArray<ASIndexedNodeContext *> *)contexts withAnimationOptions:(ASDataControllerAnimationOptions)animationOptions
 {
   ASSERT_ON_EDITING_QUEUE;
   
-  weakify(self);
-  [self batchLayoutNodesFromContexts:contexts ofKind:ASDataControllerRowNodeKind completion:^(NSArray<ASCellNode *> *nodes, NSArray<NSIndexPath *> *indexPaths) {
-    strongifyOrExit(self);
-    // Insert finished nodes into data storage
-    [self _insertNodes:nodes atIndexPaths:indexPaths withAnimationOptions:animationOptions];
-  }];
-}
-
-- (void)_layoutNodesFromContexts:(NSArray<ASIndexedNodeContext *> *)contexts ofKind:(NSString *)kind completion:(ASDataControllerCompletionBlock)completionBlock
-{
-  ASSERT_ON_EDITING_QUEUE;
-  
-  if (!contexts.count || _dataSource == nil) {
+  NSUInteger nodeCount = contexts.count;
+  if (nodeCount == 0) {
     return;
   }
 
-  NSUInteger nodeCount = contexts.count;
   __strong NSIndexPath **allocatedContextIndexPaths = (__strong NSIndexPath **)calloc(nodeCount, sizeof(NSIndexPath *));
   __strong ASCellNode **allocatedNodeBuffer = (__strong ASCellNode **)calloc(nodeCount, sizeof(ASCellNode *));
-
+  
   // TODO: Can we make this asynchronous, so that we don't retain self the whole time?
-  for (NSUInteger j = 0; j < nodeCount; j += kASDataControllerSizingCountPerProcessor) {
-    NSInteger batchCount = MIN(kASDataControllerSizingCountPerProcessor, nodeCount - j);
-
-    dispatch_queue_t queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
-    dispatch_apply(batchCount, queue, ^(size_t i) {
-      unsigned long k = j + i;
-      ASIndexedNodeContext *context = contexts[k];
-      ASCellNode *node = [context allocateNode];
-      if (node == nil) {
-        ASDisplayNodeAssertNotNil(node, @"Node block created nil node; %@, %@", self, self.dataSource);
-        node = [[ASCellNode alloc] init]; // Fallback to avoid crash for production apps.
-      }
-        
-      allocatedContextIndexPaths[k] = context.indexPath;
-      allocatedNodeBuffer[k] = node;
-      
-      [self _layoutNode:node withConstrainedSize:context.constrainedSize];
-    });
+  dispatch_queue_t queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
+  dispatch_apply(nodeCount, queue, ^(size_t i) {
+      NSLog(@"%p insert invoked on %p", self, [NSThread currentThread]);
+    if (_dataSource == nil) {
+      return;
+    }
+    
+    // Allocate the node.
+    ASIndexedNodeContext *context = contexts[i];
+    ASCellNode *node = [context allocateNode];
+    if (node == nil) {
+      ASDisplayNodeAssertNotNil(node, @"Node block created nil node; %@, %@", self, self.dataSource);
+      node = [[ASCellNode alloc] init]; // Fallback to avoid crash for production apps.
+    }
+    
+    // Measure the node.
+    CGRect frame = CGRectZero;
+    frame.size = [node measureWithSizeRange:context.constrainedSize].size;
+    node.frame = frame;
+    
+    allocatedContextIndexPaths[i] = context.indexPath;
+    allocatedNodeBuffer[i] = node;
+  });
+  
+  if (_dataSource == nil) {
+    return;
   }
   
-  // Create nodes and indexPaths array's
+  // Create nodes and indexPaths arrays
   NSArray *allocatedNodes = [NSArray arrayWithObjects:allocatedNodeBuffer count:nodeCount];
   NSArray *indexPaths = [NSArray arrayWithObjects:allocatedContextIndexPaths count:nodeCount];
   
@@ -201,10 +172,8 @@ NSString * const ASDataControllerRowNodeKind = @"_ASDataControllerRowNodeKind";
   }
   free(allocatedContextIndexPaths);
   free(allocatedNodeBuffer);
-
-  if (completionBlock) {
-    completionBlock(allocatedNodes, indexPaths);
-  }
+  // Insert finished nodes into data storage
+  [self _insertNodes:allocatedNodes atIndexPaths:indexPaths withAnimationOptions:animationOptions];
 }
 
 - (ASSizeRange)constrainedSizeForNodeOfKind:(NSString *)kind atIndexPath:(NSIndexPath *)indexPath
@@ -439,7 +408,7 @@ NSString * const ASDataControllerRowNodeKind = @"_ASDataControllerRowNodeKind";
       }
       [self _insertSections:sections atIndexSet:sectionIndexSet withAnimationOptions:animationOptions];
 
-      [self _batchLayoutNodesFromContexts:contexts withAnimationOptions:animationOptions];
+      [self _layoutNodesFromContexts:contexts withAnimationOptions:animationOptions];
 
       if (completion) {
         dispatch_async(dispatch_get_main_queue(), completion);
@@ -634,7 +603,7 @@ NSString * const ASDataControllerRowNodeKind = @"_ASDataControllerRowNodeKind";
 
       [self _insertSections:sectionArray atIndexSet:sections withAnimationOptions:animationOptions];
       
-      [self _batchLayoutNodesFromContexts:contexts withAnimationOptions:animationOptions];
+      [self _layoutNodesFromContexts:contexts withAnimationOptions:animationOptions];
     });
   }];
 }
@@ -787,7 +756,7 @@ NSString * const ASDataControllerRowNodeKind = @"_ASDataControllerRowNodeKind";
       [self willInsertRowsAtIndexPaths:indexPaths];
 
       LOG(@"Edit Transaction - insertRows: %@", indexPaths);
-      [self _batchLayoutNodesFromContexts:contexts withAnimationOptions:animationOptions];
+      [self _layoutNodesFromContexts:contexts withAnimationOptions:animationOptions];
     });
   }];
 }
