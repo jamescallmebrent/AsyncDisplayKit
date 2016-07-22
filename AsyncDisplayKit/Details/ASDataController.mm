@@ -19,6 +19,7 @@
 #import "ASThread.h"
 #import "ASIndexedNodeContext.h"
 #import "ASDataController+Subclasses.h"
+#import "ASScope.h"
 
 //#define LOG(...) NSLog(__VA_ARGS__)
 #define LOG(...)
@@ -148,7 +149,9 @@ NSString * const ASDataControllerRowNodeKind = @"_ASDataControllerRowNodeKind";
 {
   ASSERT_ON_EDITING_QUEUE;
   
+  weakify(self);
   [self batchLayoutNodesFromContexts:contexts ofKind:ASDataControllerRowNodeKind completion:^(NSArray<ASCellNode *> *nodes, NSArray<NSIndexPath *> *indexPaths) {
+    strongifyOrExit(self);
     // Insert finished nodes into data storage
     [self _insertNodes:nodes atIndexPaths:indexPaths withAnimationOptions:animationOptions];
   }];
@@ -166,6 +169,7 @@ NSString * const ASDataControllerRowNodeKind = @"_ASDataControllerRowNodeKind";
   __strong NSIndexPath **allocatedContextIndexPaths = (__strong NSIndexPath **)calloc(nodeCount, sizeof(NSIndexPath *));
   __strong ASCellNode **allocatedNodeBuffer = (__strong ASCellNode **)calloc(nodeCount, sizeof(ASCellNode *));
 
+  // TODO: Can we make this asynchronous, so that we don't retain self the whole time?
   for (NSUInteger j = 0; j < nodeCount; j += kASDataControllerSizingCountPerProcessor) {
     NSInteger batchCount = MIN(kASDataControllerSizingCountPerProcessor, nodeCount - j);
 
@@ -223,8 +227,10 @@ NSString * const ASDataControllerRowNodeKind = @"_ASDataControllerRowNodeKind";
   // Deep copy is critical here, or future edits to the sub-arrays will pollute state between _editing and _complete on different threads.
   NSMutableArray *completedNodes = ASTwoDimensionalArrayDeepMutableCopy(editingNodes);
   
+  weakify(self);
   [_mainSerialQueue performBlockOnMainThread:^{
-    _completedNodes[kind] = completedNodes;
+    strongifyOrExit(self);
+    self->_completedNodes[kind] = completedNodes;
     if (completionBlock) {
       completionBlock(nodes, indexPaths);
     }
@@ -242,8 +248,10 @@ NSString * const ASDataControllerRowNodeKind = @"_ASDataControllerRowNodeKind";
   ASDeleteElementsInMultidimensionalArrayAtIndexPaths(editingNodes, indexPaths);
   _editingNodes[kind] = editingNodes;
 
+  weakify(self);
   [_mainSerialQueue performBlockOnMainThread:^{
-    NSMutableArray *allNodes = _completedNodes[kind];
+    strongifyOrExit(self);
+    NSMutableArray *allNodes = self->_completedNodes[kind];
     NSArray *nodes = ASFindElementsInMultidimensionalArrayAtIndexPaths(allNodes, indexPaths);
     ASDeleteElementsInMultidimensionalArrayAtIndexPaths(allNodes, indexPaths);
     if (completionBlock) {
@@ -267,8 +275,10 @@ NSString * const ASDataControllerRowNodeKind = @"_ASDataControllerRowNodeKind";
   // Deep copy is critical here, or future edits to the sub-arrays will pollute state between _editing and _complete on different threads.
   NSArray *sectionsForCompleted = ASTwoDimensionalArrayDeepMutableCopy(sections);
   
+  weakify(self);
   [_mainSerialQueue performBlockOnMainThread:^{
-    [_completedNodes[kind] insertObjects:sectionsForCompleted atIndexes:indexSet];
+    strongifyOrExit(self);
+    [self->_completedNodes[kind] insertObjects:sectionsForCompleted atIndexes:indexSet];
     if (completionBlock) {
       completionBlock(sections, indexSet);
     }
@@ -282,8 +292,10 @@ NSString * const ASDataControllerRowNodeKind = @"_ASDataControllerRowNodeKind";
   }
   
   [_editingNodes[kind] removeObjectsAtIndexes:indexSet];
+  weakify(self);
   [_mainSerialQueue performBlockOnMainThread:^{
-    [_completedNodes[kind] removeObjectsAtIndexes:indexSet];
+    strongifyOrExit(self);
+    [self->_completedNodes[kind] removeObjectsAtIndexes:indexSet];
     if (completionBlock) {
       completionBlock(indexSet);
     }
@@ -302,11 +314,13 @@ NSString * const ASDataControllerRowNodeKind = @"_ASDataControllerRowNodeKind";
 {
   ASSERT_ON_EDITING_QUEUE;
   
+  weakify(self);
   [self insertNodes:nodes ofKind:ASDataControllerRowNodeKind atIndexPaths:indexPaths completion:^(NSArray *nodes, NSArray *indexPaths) {
     ASDisplayNodeAssertMainThread();
+    strongifyOrExit(self);
     
-    if (_delegateDidInsertNodes)
-      [_delegate dataController:self didInsertNodes:nodes atIndexPaths:indexPaths withAnimationOptions:animationOptions];
+    if (self->_delegateDidInsertNodes)
+      [self->_delegate dataController:self didInsertNodes:nodes atIndexPaths:indexPaths withAnimationOptions:animationOptions];
   }];
 }
 
@@ -320,11 +334,13 @@ NSString * const ASDataControllerRowNodeKind = @"_ASDataControllerRowNodeKind";
 {
   ASSERT_ON_EDITING_QUEUE;
   
+  weakify(self);
   [self deleteNodesOfKind:ASDataControllerRowNodeKind atIndexPaths:indexPaths completion:^(NSArray *nodes, NSArray *indexPaths) {
     ASDisplayNodeAssertMainThread();
+    strongifyOrExit(self);
     
-    if (_delegateDidDeleteNodes)
-      [_delegate dataController:self didDeleteNodes:nodes atIndexPaths:indexPaths withAnimationOptions:animationOptions];
+    if (self->_delegateDidDeleteNodes)
+      [self->_delegate dataController:self didDeleteNodes:nodes atIndexPaths:indexPaths withAnimationOptions:animationOptions];
   }];
 }
 
@@ -338,11 +354,13 @@ NSString * const ASDataControllerRowNodeKind = @"_ASDataControllerRowNodeKind";
 {
   ASSERT_ON_EDITING_QUEUE;
   
+  weakify(self);
   [self insertSections:sections ofKind:ASDataControllerRowNodeKind atIndexSet:indexSet completion:^(NSArray *sections, NSIndexSet *indexSet) {
     ASDisplayNodeAssertMainThread();
+    strongifyOrExit(self);
     
-    if (_delegateDidInsertSections)
-      [_delegate dataController:self didInsertSections:sections atIndexSet:indexSet withAnimationOptions:animationOptions];
+    if (self->_delegateDidInsertSections)
+      [self->_delegate dataController:self didInsertSections:sections atIndexSet:indexSet withAnimationOptions:animationOptions];
   }];
 }
 
@@ -356,11 +374,13 @@ NSString * const ASDataControllerRowNodeKind = @"_ASDataControllerRowNodeKind";
 {
   ASSERT_ON_EDITING_QUEUE;
   
+  weakify(self);
   [self deleteSectionsOfKind:ASDataControllerRowNodeKind atIndexSet:indexSet completion:^(NSIndexSet *indexSet) {
     ASDisplayNodeAssertMainThread();
+    strongifyOrExit(self);
     
-    if (_delegateDidDeleteSections)
-      [_delegate dataController:self didDeleteSectionsAtIndexSet:indexSet withAnimationOptions:animationOptions];
+    if (self->_delegateDidDeleteSections)
+      [self->_delegate dataController:self didDeleteSectionsAtIndexSet:indexSet withAnimationOptions:animationOptions];
   }];
 }
 
@@ -379,11 +399,13 @@ NSString * const ASDataControllerRowNodeKind = @"_ASDataControllerRowNodeKind";
 - (void)_reloadDataWithAnimationOptions:(ASDataControllerAnimationOptions)animationOptions synchronously:(BOOL)synchronously completion:(void (^)())completion
 {
   _initialReloadDataHasBeenCalled = YES;
+  weakify(self);
   [self performEditCommandWithBlock:^{
     ASDisplayNodeAssertMainThread();
-    dispatch_group_wait(_editingTransactionGroup, DISPATCH_TIME_FOREVER);
+    strongifyOrExit(self);
+    dispatch_group_wait(self->_editingTransactionGroup, DISPATCH_TIME_FOREVER);
 
-    NSUInteger sectionCount = [_dataSource numberOfSectionsInDataController:self];
+    NSUInteger sectionCount = [self->_dataSource numberOfSectionsInDataController:self];
     NSIndexSet *sectionIndexSet = [NSIndexSet indexSetWithIndexesInRange:NSMakeRange(0, sectionCount)];
     NSArray<ASIndexedNodeContext *> *contexts = [self _populateFromDataSourceWithSectionIndexSet:sectionIndexSet];
 
@@ -394,11 +416,12 @@ NSString * const ASDataControllerRowNodeKind = @"_ASDataControllerRowNodeKind";
     // Allow subclasses to perform setup before going into the edit transaction
     [self prepareForReloadData];
     
-    dispatch_group_async(_editingTransactionGroup, _editingTransactionQueue, ^{
+    dispatch_group_async(self->_editingTransactionGroup, self->_editingTransactionQueue, ^{
+      strongifyOrExit(self);
       LOG(@"Edit Transaction - reloadData");
       
       // Remove everything that existed before the reload, now that we're ready to insert replacements
-      NSMutableArray *editingNodes = _editingNodes[ASDataControllerRowNodeKind];
+      NSMutableArray *editingNodes = self->_editingNodes[ASDataControllerRowNodeKind];
       NSUInteger editingNodesSectionCount = editingNodes.count;
       
       if (editingNodesSectionCount) {
@@ -519,14 +542,17 @@ NSString * const ASDataControllerRowNodeKind = @"_ASDataControllerRowNodeKind";
   if (_batchUpdateCounter == 0) {
     LOG(@"endUpdatesWithCompletion - beginning");
 
+    weakify(self);
     dispatch_group_async(_editingTransactionGroup, _editingTransactionQueue, ^{
-      [_mainSerialQueue performBlockOnMainThread:^{
+      strongifyOrExit(self);
+      [self->_mainSerialQueue performBlockOnMainThread:^{
+        strongifyOrExit(self);
         // Deep copy _completedNodes to _externalCompletedNodes.
         // Any external queries from now on will be done on _externalCompletedNodes, to guarantee data consistency with the delegate.
-        _externalCompletedNodes = ASTwoDimensionalArrayDeepMutableCopy(_completedNodes[ASDataControllerRowNodeKind]);
+        self->_externalCompletedNodes = ASTwoDimensionalArrayDeepMutableCopy(self->_completedNodes[ASDataControllerRowNodeKind]);
 
         LOG(@"endUpdatesWithCompletion - begin updates call to delegate");
-        [_delegate dataControllerBeginUpdates:self];
+        [self->_delegate dataControllerBeginUpdates:self];
       }];
     });
 
@@ -541,12 +567,14 @@ NSString * const ASDataControllerRowNodeKind = @"_ASDataControllerRowNodeKind";
     }
     [_pendingEditCommandBlocks removeAllObjects];
     dispatch_group_async(_editingTransactionGroup, _editingTransactionQueue, ^{
-      [_mainSerialQueue performBlockOnMainThread:^{
+      strongifyOrExit(self);
+      [self->_mainSerialQueue performBlockOnMainThread:^{
+        strongifyOrExit(self);
         // Now that the transaction is done, _completedNodes can be accessed externally again.
-        _externalCompletedNodes = nil;
+        self->_externalCompletedNodes = nil;
         
         LOG(@"endUpdatesWithCompletion - calling delegate end");
-        [_delegate dataController:self endUpdatesAnimated:animated completion:completion];
+        [self->_delegate dataController:self endUpdatesAnimated:animated completion:completion];
       }];
     });
   }
@@ -583,16 +611,19 @@ NSString * const ASDataControllerRowNodeKind = @"_ASDataControllerRowNodeKind";
 
 - (void)insertSections:(NSIndexSet *)sections withAnimationOptions:(ASDataControllerAnimationOptions)animationOptions
 {
+  weakify(self);
   [self performEditCommandWithBlock:^{
     ASDisplayNodeAssertMainThread();
+    strongifyOrExit(self);
     LOG(@"Edit Command - insertSections: %@", sections);
-    dispatch_group_wait(_editingTransactionGroup, DISPATCH_TIME_FOREVER);
+    dispatch_group_wait(self->_editingTransactionGroup, DISPATCH_TIME_FOREVER);
     
     NSArray<ASIndexedNodeContext *> *contexts = [self _populateFromDataSourceWithSectionIndexSet:sections];
 
     [self prepareForInsertSections:sections];
     
-    dispatch_group_async(_editingTransactionGroup, _editingTransactionQueue, ^{
+    dispatch_group_async(self->_editingTransactionGroup, self->_editingTransactionQueue, ^{
+      strongifyOrExit(self);
       [self willInsertSections:sections];
 
       LOG(@"Edit Transaction - insertSections: %@", sections);
@@ -610,16 +641,19 @@ NSString * const ASDataControllerRowNodeKind = @"_ASDataControllerRowNodeKind";
 
 - (void)deleteSections:(NSIndexSet *)sections withAnimationOptions:(ASDataControllerAnimationOptions)animationOptions
 {
+  weakify(self);
   [self performEditCommandWithBlock:^{
     ASDisplayNodeAssertMainThread();
+    strongifyOrExit(self);
     LOG(@"Edit Command - deleteSections: %@", sections);
-    dispatch_group_wait(_editingTransactionGroup, DISPATCH_TIME_FOREVER);
-    dispatch_group_async(_editingTransactionGroup, _editingTransactionQueue, ^{
+    dispatch_group_wait(self->_editingTransactionGroup, DISPATCH_TIME_FOREVER);
+    dispatch_group_async(self->_editingTransactionGroup, self->_editingTransactionQueue, ^{
+      strongifyOrExit(self);
       [self willDeleteSections:sections];
 
       // remove elements
       LOG(@"Edit Transaction - deleteSections: %@", sections);
-      NSArray *indexPaths = ASIndexPathsForMultidimensionalArrayAtIndexSet(_editingNodes[ASDataControllerRowNodeKind], sections);
+      NSArray *indexPaths = ASIndexPathsForMultidimensionalArrayAtIndexSet(self->_editingNodes[ASDataControllerRowNodeKind], sections);
       
       [self _deleteNodesAtIndexPaths:indexPaths withAnimationOptions:animationOptions];
       [self _deleteSectionsAtIndexSet:sections withAnimationOptions:animationOptions];
@@ -634,27 +668,30 @@ NSString * const ASDataControllerRowNodeKind = @"_ASDataControllerRowNodeKind";
 
 - (void)moveSection:(NSInteger)section toSection:(NSInteger)newSection withAnimationOptions:(ASDataControllerAnimationOptions)animationOptions
 {
+  weakify(self);
   [self performEditCommandWithBlock:^{
     ASDisplayNodeAssertMainThread();
+    strongifyOrExit(self);
     LOG(@"Edit Command - moveSection");
 
-    dispatch_group_wait(_editingTransactionGroup, DISPATCH_TIME_FOREVER);
-    dispatch_group_async(_editingTransactionGroup, _editingTransactionQueue, ^{
+    dispatch_group_wait(self->_editingTransactionGroup, DISPATCH_TIME_FOREVER);
+    dispatch_group_async(self->_editingTransactionGroup, self->_editingTransactionQueue, ^{
+      strongifyOrExit(self);
       [self willMoveSection:section toSection:newSection];
 
       // remove elements
       
       LOG(@"Edit Transaction - moveSection");
-      
-      NSArray *indexPaths = ASIndexPathsForMultidimensionalArrayAtIndexSet(_editingNodes[ASDataControllerRowNodeKind], [NSIndexSet indexSetWithIndex:section]);
-      NSArray *nodes = ASFindElementsInMultidimensionalArrayAtIndexPaths(_editingNodes[ASDataControllerRowNodeKind], indexPaths);
+      NSMutableArray *editingRows = self->_editingNodes[ASDataControllerRowNodeKind];
+      NSArray *indexPaths = ASIndexPathsForMultidimensionalArrayAtIndexSet(editingRows, [NSIndexSet indexSetWithIndex:section]);
+      NSArray *nodes = ASFindElementsInMultidimensionalArrayAtIndexPaths(editingRows, indexPaths);
       [self _deleteNodesAtIndexPaths:indexPaths withAnimationOptions:animationOptions];
 
       // update the section of indexpaths
-      NSIndexPath *sectionIndexPath = [[NSIndexPath alloc] initWithIndex:newSection];
       NSMutableArray *updatedIndexPaths = [[NSMutableArray alloc] initWithCapacity:indexPaths.count];
       for (NSIndexPath *indexPath in indexPaths) {
-        [updatedIndexPaths addObject:[sectionIndexPath indexPathByAddingIndex:[indexPath indexAtPosition:indexPath.length - 1]]];
+        NSIndexPath *updatedIndexPath = [NSIndexPath indexPathForItem:indexPath.item inSection:newSection];
+        [updatedIndexPaths addObject:updatedIndexPath];
       }
 
       // Don't re-calculate size for moving
@@ -720,10 +757,12 @@ NSString * const ASDataControllerRowNodeKind = @"_ASDataControllerRowNodeKind";
 
 - (void)insertRowsAtIndexPaths:(NSArray *)indexPaths withAnimationOptions:(ASDataControllerAnimationOptions)animationOptions
 {
+  weakify(self);
   [self performEditCommandWithBlock:^{
     ASDisplayNodeAssertMainThread();
+    strongifyOrExit(self);
     LOG(@"Edit Command - insertRows: %@", indexPaths);
-    dispatch_group_wait(_editingTransactionGroup, DISPATCH_TIME_FOREVER);
+    dispatch_group_wait(self->_editingTransactionGroup, DISPATCH_TIME_FOREVER);
 
     // Sort indexPath to avoid messing up the index when inserting in several batches
     NSArray *sortedIndexPaths = [indexPaths sortedArrayUsingSelector:@selector(compare:)];
@@ -733,7 +772,7 @@ NSString * const ASDataControllerRowNodeKind = @"_ASDataControllerRowNodeKind";
     ASEnvironmentTraitCollection environmentTraitCollection = environment.environmentTraitCollection;
     
     for (NSIndexPath *indexPath in sortedIndexPaths) {
-      ASCellNodeBlock nodeBlock = [_dataSource dataController:self nodeBlockAtIndexPath:indexPath];
+      ASCellNodeBlock nodeBlock = [self->_dataSource dataController:self nodeBlockAtIndexPath:indexPath];
       ASSizeRange constrainedSize = [self constrainedSizeForNodeOfKind:ASDataControllerRowNodeKind atIndexPath:indexPath];
       [contexts addObject:[[ASIndexedNodeContext alloc] initWithNodeBlock:nodeBlock
                                                                 indexPath:indexPath
@@ -743,7 +782,8 @@ NSString * const ASDataControllerRowNodeKind = @"_ASDataControllerRowNodeKind";
 
     [self prepareForInsertRowsAtIndexPaths:indexPaths];
 
-    dispatch_group_async(_editingTransactionGroup, _editingTransactionQueue, ^{
+    dispatch_group_async(self->_editingTransactionGroup, self->_editingTransactionQueue, ^{
+      strongifyOrExit(self);
       [self willInsertRowsAtIndexPaths:indexPaths];
 
       LOG(@"Edit Transaction - insertRows: %@", indexPaths);
@@ -754,11 +794,13 @@ NSString * const ASDataControllerRowNodeKind = @"_ASDataControllerRowNodeKind";
 
 - (void)deleteRowsAtIndexPaths:(NSArray *)indexPaths withAnimationOptions:(ASDataControllerAnimationOptions)animationOptions
 {
+  weakify(self);
   [self performEditCommandWithBlock:^{
+    strongifyOrExit(self);
     ASDisplayNodeAssertMainThread();
     LOG(@"Edit Command - deleteRows: %@", indexPaths);
 
-    dispatch_group_wait(_editingTransactionGroup, DISPATCH_TIME_FOREVER);
+    dispatch_group_wait(self->_editingTransactionGroup, DISPATCH_TIME_FOREVER);
     
     // Sort indexPath in order to avoid messing up the index when deleting in several batches.
     // FIXME: Shouldn't deletes be sorted in descending order?
@@ -766,7 +808,8 @@ NSString * const ASDataControllerRowNodeKind = @"_ASDataControllerRowNodeKind";
 
     [self prepareForDeleteRowsAtIndexPaths:sortedIndexPaths];
 
-    dispatch_group_async(_editingTransactionGroup, _editingTransactionQueue, ^{
+    dispatch_group_async(self->_editingTransactionGroup, self->_editingTransactionQueue, ^{
+      strongifyOrExit(self);
       [self willDeleteRowsAtIndexPaths:sortedIndexPaths];
 
       LOG(@"Edit Transaction - deleteRows: %@", indexPaths);
@@ -782,17 +825,20 @@ NSString * const ASDataControllerRowNodeKind = @"_ASDataControllerRowNodeKind";
 
 - (void)relayoutAllNodes
 {
+  weakify(self);
   [self performEditCommandWithBlock:^{
     ASDisplayNodeAssertMainThread();
+    strongifyOrExit(self);
     LOG(@"Edit Command - relayoutRows");
-    dispatch_group_wait(_editingTransactionGroup, DISPATCH_TIME_FOREVER);
+    dispatch_group_wait(self->_editingTransactionGroup, DISPATCH_TIME_FOREVER);
 
     // Can't relayout right away because _completedNodes may not be up-to-date,
     // i.e there might be some nodes that were measured using the old constrained size but haven't been added to _completedNodes
     // (see _layoutNodes:atIndexPaths:withAnimationOptions:).
-    dispatch_group_async(_editingTransactionGroup, _editingTransactionQueue, ^{
-      [_mainSerialQueue performBlockOnMainThread:^{
-        for (NSString *kind in _completedNodes) {
+    dispatch_group_async(self->_editingTransactionGroup, self->_editingTransactionQueue, ^{
+      strongifyOrExit(self);
+      [self->_mainSerialQueue performBlockOnMainThread:^{
+        for (NSString *kind in self->_completedNodes) {
           [self _relayoutNodesOfKind:kind];
         }
       }];
@@ -825,15 +871,18 @@ NSString * const ASDataControllerRowNodeKind = @"_ASDataControllerRowNodeKind";
 
 - (void)moveRowAtIndexPath:(NSIndexPath *)indexPath toIndexPath:(NSIndexPath *)newIndexPath withAnimationOptions:(ASDataControllerAnimationOptions)animationOptions
 {
+  weakify(self);
   [self performEditCommandWithBlock:^{
     ASDisplayNodeAssertMainThread();
+    strongifyOrExit(self);
     LOG(@"Edit Command - moveRow: %@ > %@", indexPath, newIndexPath);
-    dispatch_group_wait(_editingTransactionGroup, DISPATCH_TIME_FOREVER);
+    dispatch_group_wait(self->_editingTransactionGroup, DISPATCH_TIME_FOREVER);
     
-    dispatch_group_async(_editingTransactionGroup, _editingTransactionQueue, ^{
+    dispatch_group_async(self->_editingTransactionGroup, self->_editingTransactionQueue, ^{
+      strongifyOrExit(self);
       LOG(@"Edit Transaction - moveRow: %@ > %@", indexPath, newIndexPath);
       NSArray *indexPaths = @[indexPath];
-      NSArray *nodes = ASFindElementsInMultidimensionalArrayAtIndexPaths(_editingNodes[ASDataControllerRowNodeKind], indexPaths);
+      NSArray *nodes = ASFindElementsInMultidimensionalArrayAtIndexPaths(self->_editingNodes[ASDataControllerRowNodeKind], indexPaths);
       [self _deleteNodesAtIndexPaths:indexPaths withAnimationOptions:animationOptions];
 
       // Don't re-calculate size for moving
