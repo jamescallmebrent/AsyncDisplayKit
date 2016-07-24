@@ -31,11 +31,14 @@
   NSMutableDictionary<NSString *, NSMutableArray<ASIndexedNodeContext *> *> *_pendingContexts;
 }
 
-- (instancetype)init
+- (instancetype)initWithDataSource:(id<ASCollectionDataControllerSource>)dataSource
 {
-  self = [super init];
+  self = [super initWithDataSource:dataSource];
   if (self != nil) {
     _pendingContexts = [NSMutableDictionary dictionary];
+    _dataSourceImplementsSupplementaryNodeBlockOfKindAtIndexPath = [dataSource respondsToSelector:@selector(dataController:supplementaryNodeBlockOfKind:atIndexPath:)];
+
+    ASDisplayNodeAssertTrue(_dataSourceImplementsSupplementaryNodeBlockOfKindAtIndexPath || [dataSource respondsToSelector:@selector(dataController:supplementaryNodeOfKind:atIndexPath:)]);
   }
   return self;
 }
@@ -294,14 +297,6 @@
 - (id<ASCollectionDataControllerSource>)collectionDataSource
 {
   return (id<ASCollectionDataControllerSource>)self.dataSource;
-}
-
-- (void)setDataSource:(id<ASDataControllerSource>)dataSource
-{
-  [super setDataSource:dataSource];
-  _dataSourceImplementsSupplementaryNodeBlockOfKindAtIndexPath = [self.collectionDataSource respondsToSelector:@selector(dataController:supplementaryNodeBlockOfKind:atIndexPath:)];
-
-  ASDisplayNodeAssertTrue(_dataSourceImplementsSupplementaryNodeBlockOfKindAtIndexPath || [self.collectionDataSource respondsToSelector:@selector(dataController:supplementaryNodeOfKind:atIndexPath:)]);
 }
 
 @end

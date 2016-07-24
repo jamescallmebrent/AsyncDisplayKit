@@ -24,9 +24,9 @@
 //#define LOG(...) NSLog(__VA_ARGS__)
 #define LOG(...)
 
+#define RETURN_IF_NO_DATASOURCE(val) if (self->_dataSource == nil) { return val; }
 #define ASSERT_ON_EDITING_QUEUE ASDisplayNodeAssertNotNil(dispatch_get_specific(&kASDataControllerEditingQueueKey), @"%@ must be called on the editing transaction queue.", NSStringFromSelector(_cmd))
 
-const static NSUInteger kASDataControllerSizingCountPerProcessor = 5;
 const static char * kASDataControllerEditingQueueKey = "kASDataControllerEditingQueueKey";
 const static char * kASDataControllerEditingQueueContext = "kASDataControllerEditingQueueContext";
 
@@ -61,13 +61,15 @@ NSString * const ASDataControllerRowNodeKind = @"_ASDataControllerRowNodeKind";
 
 #pragma mark - Lifecycle
 
-- (instancetype)init
+- (instancetype)initWithDataSource:(id<ASDataControllerSource>)dataSource
 {
   if (!(self = [super init])) {
     return nil;
   }
   ASDisplayNodeAssert(![self isMemberOfClass:[ASDataController class]], @"ASDataController is an abstract class and should not be instantiated. Instantiate a subclass instead.");
-  
+
+  _dataSource = dataSource;
+
   _completedNodes = [NSMutableDictionary dictionary];
   _editingNodes = [NSMutableDictionary dictionary];
 
@@ -86,6 +88,13 @@ NSString * const ASDataControllerRowNodeKind = @"_ASDataControllerRowNodeKind";
   _batchUpdateCounter = 0;
   
   return self;
+}
+
+- (instancetype)init
+{
+  ASDisplayNodeFailAssert(@"Failed to call designated initializer.");
+  id<ASDataControllerSource> fakeDataSource = nil;
+  return [self initWithDataSource:fakeDataSource];
 }
 
 - (void)setDelegate:(id<ASDataControllerDelegate>)delegate
@@ -135,11 +144,8 @@ NSString * const ASDataControllerRowNodeKind = @"_ASDataControllerRowNodeKind";
   // TODO: Can we make this asynchronous, so that we don't retain self the whole time?
   dispatch_queue_t queue = dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0);
   dispatch_apply(nodeCount, queue, ^(size_t i) {
-      NSLog(@"%p insert invoked on %p", self, [NSThread currentThread]);
-    if (_dataSource == nil) {
-      return;
-    }
-    
+    RETURN_IF_NO_DATASOURCE();
+
     // Allocate the node.
     ASIndexedNodeContext *context = contexts[i];
     ASCellNode *node = [context allocateNode];
@@ -156,14 +162,16 @@ NSString * const ASDataControllerRowNodeKind = @"_ASDataControllerRowNodeKind";
     allocatedContextIndexPaths[i] = context.indexPath;
     allocatedNodeBuffer[i] = node;
   });
-  
-  if (_dataSource == nil) {
-    return;
+
+  BOOL canceled = _dataSource == nil;
+
+  NSArray *allocatedNodes = nil;
+  NSArray *indexPaths = nil;
+  if (canceled == NO) {
+    // Create nodes and indexPaths arrays
+    allocatedNodes = [NSArray arrayWithObjects:allocatedNodeBuffer count:nodeCount];
+    indexPaths = [NSArray arrayWithObjects:allocatedContextIndexPaths count:nodeCount];
   }
-  
-  // Create nodes and indexPaths arrays
-  NSArray *allocatedNodes = [NSArray arrayWithObjects:allocatedNodeBuffer count:nodeCount];
-  NSArray *indexPaths = [NSArray arrayWithObjects:allocatedContextIndexPaths count:nodeCount];
   
   // Nil out buffer indexes to allow arc to free the stored cells.
   for (int i = 0; i < nodeCount; i++) {
@@ -172,8 +180,11 @@ NSString * const ASDataControllerRowNodeKind = @"_ASDataControllerRowNodeKind";
   }
   free(allocatedContextIndexPaths);
   free(allocatedNodeBuffer);
-  // Insert finished nodes into data storage
-  [self _insertNodes:allocatedNodes atIndexPaths:indexPaths withAnimationOptions:animationOptions];
+
+  if (canceled == NO) {
+    // Insert finished nodes into data storage
+    [self _insertNodes:allocatedNodes atIndexPaths:indexPaths withAnimationOptions:animationOptions];
+  }
 }
 
 - (ASSizeRange)constrainedSizeForNodeOfKind:(NSString *)kind atIndexPath:(NSIndexPath *)indexPath
